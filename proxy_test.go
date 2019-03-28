@@ -702,9 +702,11 @@ func readResponse(buf *bufio.Reader) string {
 }
 
 func writeConnect(w io.Writer) {
-	req, err := http.NewRequest("CONNECT", srv.URL[len("http://"):], nil)
-	panicOnErr(err, "NewRequest")
-	req.Write(w)
+	// https://github.com/golang/go/issues/22554
+	connectReq := "CONNECT " + srv.URL[len("http://"):] + " HTTP/1.1\r\n" +
+		"Host: " + srv.URL[len("http://"):] + "\r\n\r\n"
+
+	_, err := w.Write([]byte(connectReq))
 	panicOnErr(err, "req(CONNECT).Write")
 }
 
