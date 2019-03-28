@@ -1,8 +1,10 @@
 package goproxy
 
 import (
+	"crypto/tls"
 	"net/http"
 	"regexp"
+	"sync"
 )
 
 // ProxyCtx is the Proxy context, contains useful information about every request. It is passed to
@@ -21,6 +23,42 @@ type ProxyCtx struct {
 	// Will connect a request to a response
 	Session int64
 	proxy   *ProxyHttpServer
+	// Certificates storage. Set to nil to not cache certificates at all.
+	certStore CertStorage
+}
+
+// CertStorage is an interface for per-domain certificates storage
+type CertStorage interface {
+	// Stores a certificate for the hostname
+	Store(hostname string, cert *tls.Certificate)
+	// Loads a certificate for the hostname
+	Load(hostname string) *tls.Certificate
+}
+
+// CertStorageMap is a simple map-based certs storage
+// It implements CertStorage interface
+type CertStorageMap struct {
+	certs map[string]*tls.Certificate
+	sync.Mutex
+}
+
+// Store stores the certificate in the storage
+func (c *CertStorageMap) Store(hostname string, cert *tls.Certificate) {
+	c.Lock()
+	if c.certs == nil {
+		c.certs = map[string]*tls.Certificate{}
+	}
+
+	c.certs[hostname] = cert
+	c.Unlock()
+}
+
+// Load loads the certificate from the storage
+func (c *CertStorageMap) Load(hostname string) *tls.Certificate {
+	c.Lock()
+	cert := c.certs[hostname]
+	c.Unlock()
+	return cert
 }
 
 type RoundTripper interface {

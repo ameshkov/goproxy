@@ -29,6 +29,8 @@ type ProxyHttpServer struct {
 	// ConnectDial will be used to create TCP connections for CONNECT requests
 	// if nil Tr.Dial will be used
 	ConnectDial func(network string, addr string) (net.Conn, error)
+	// Per-domain certificates storage
+	CertStore CertStorage
 }
 
 var hasPort = regexp.MustCompile(`:\d+$`)
@@ -94,7 +96,7 @@ func removeProxyHeaders(ctx *ProxyCtx, r *http.Request) {
 	//   be communicated by proxies over further connections.
 	r.Header.Del("Connection")
 
-	// https://github.com/elazarl/goproxy/pull/215
+	// If request.Close is not set to false, the transfer.writeHeader function will still write the "Connection: close" header
 	r.Close = false
 }
 
@@ -161,7 +163,8 @@ func NewProxyHttpServer() *ProxyHttpServer {
 		NonproxyHandler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "This is a proxy server. Does not respond to non-proxy requests.", 500)
 		}),
-		Tr: &http.Transport{TLSClientConfig: tlsClientSkipVerify, Proxy: http.ProxyFromEnvironment},
+		Tr:        &http.Transport{TLSClientConfig: tlsClientSkipVerify, Proxy: http.ProxyFromEnvironment},
+		CertStore: &CertStorageMap{},
 	}
 	proxy.ConnectDial = dialerFromEnv(&proxy)
 

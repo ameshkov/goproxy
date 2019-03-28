@@ -1,38 +1,17 @@
 package goproxy
 
 import (
+	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha1"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"math/big"
 	"net"
-	"runtime"
-	"sort"
 	"time"
 )
 
-func hashSorted(lst []string) []byte {
-	c := make([]string, len(lst))
-	copy(c, lst)
-	sort.Strings(c)
-	h := sha1.New()
-	for _, s := range c {
-		h.Write([]byte(s + ","))
-	}
-	return h.Sum(nil)
-}
-
-func hashSortedBigInt(lst []string) *big.Int {
-	rv := new(big.Int)
-	rv.SetBytes(hashSorted(lst))
-	return rv
-}
-
-var goproxySignerVersion = ":goroxy1"
-
-func signHost(ca tls.Certificate, hosts []string) (cert tls.Certificate, err error) {
+func signHost(ca tls.Certificate, hosts []string) (cert *tls.Certificate, err error) {
 	var x509ca *x509.Certificate
 
 	// Use the provided ca and not the global GoproxyCa for certificate generation.
@@ -44,11 +23,17 @@ func signHost(ca tls.Certificate, hosts []string) (cert tls.Certificate, err err
 	if err != nil {
 		panic(err)
 	}
-	hash := hashSorted(append(hosts, goproxySignerVersion, ":"+runtime.Version()))
+	// Make random serial to prevent SEC_ERROR_REUSED_ISSUER_AND_SERIAL
+	// https://github.com/elazarl/goproxy/issues/311
+	hash := make([]byte, 20)
+	_, err = rand.Read(hash)
+	if err != nil {
+		panic(err)
+	}
 	serial := new(big.Int)
 	serial.SetBytes(hash)
+
 	template := x509.Certificate{
-		// TODO(elazar): instead of this ugly hack, just encode the certificate and hash the binary form.
 		SerialNumber: serial,
 		Issuer:       x509ca.Subject,
 		Subject: pkix.Name{
@@ -81,7 +66,7 @@ func signHost(ca tls.Certificate, hosts []string) (cert tls.Certificate, err err
 	if derBytes, err = x509.CreateCertificate(&csprng, &template, x509ca, &certpriv.PublicKey, ca.PrivateKey); err != nil {
 		return
 	}
-	return tls.Certificate{
+	return &tls.Certificate{
 		Certificate: [][]byte{derBytes, ca.Certificate[0]},
 		PrivateKey:  certpriv,
 	}, nil
